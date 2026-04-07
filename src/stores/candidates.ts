@@ -1,0 +1,49 @@
+import { defineStore } from 'pinia';
+import { supabase } from '@/lib/supabase';
+import type { Candidate } from '@/types';
+
+export const useCandidateStore = defineStore('candidates', {
+  state: () => ({
+    candidates: [] as Candidate[],
+    loading: false
+  }),
+
+  actions: {
+    async fetchCandidates() {
+      if (this.loading) return;
+      this.loading = true;
+      try {
+        const { data, error } = await supabase
+          .from('candidates')
+          .select('id, name, number')
+          .order('number', { ascending: true });
+
+        if (error) {
+          console.error('Fetch candidates error:', error);
+          throw error;
+        }
+        
+        console.log('Fetched candidates:', data);
+        this.candidates = data as Candidate[];
+      } catch (error) {
+        console.error('Error fetching candidates:', error);
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async updateCandidate(id: string, updates: Partial<Candidate>) {
+      const { error } = await supabase
+        .from('candidates')
+        .update(updates)
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      const index = this.candidates.findIndex(c => c.id === id);
+      if (index !== -1) {
+        this.candidates[index] = { ...this.candidates[index], ...updates };
+      }
+    }
+  }
+});
