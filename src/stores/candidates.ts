@@ -15,16 +15,29 @@ export const useCandidateStore = defineStore('candidates', {
       try {
         const { data, error } = await supabase
           .from('candidates')
-          .select('id, name, number')
-          .order('number', { ascending: true });
+          .select('*');
 
         if (error) {
           console.error('Fetch candidates error:', error);
           throw error;
         }
-        
-        console.log('Fetched candidates:', data);
-        this.candidates = data as Candidate[];
+
+        const normalized = (data || []).map((row: any) => ({
+          ...row,
+          id: String(row.id),
+          name: row.name ?? row.candidate_name ?? '',
+          number: Number(row.number ?? row.candidate_number ?? 0),
+          country_name: row.country_name ?? row.country ?? '',
+          image_url: row.image_url ?? '',
+          photo_url: row.photo_url ?? row.image_url ?? '',
+          is_top14: Boolean(row.is_top14),
+          is_top5: Boolean(row.is_top5)
+        }));
+
+        normalized.sort((a, b) => a.number - b.number);
+
+        console.log('Fetched candidates:', normalized);
+        this.candidates = normalized as Candidate[];
       } catch (error) {
         console.error('Error fetching candidates:', error);
       } finally {
