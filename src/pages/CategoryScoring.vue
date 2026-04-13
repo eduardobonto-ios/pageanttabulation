@@ -7,7 +7,7 @@
           <span>🔍 Debug:</span>
           <span>Loading: {{ loading }}</span>
           <span>Category: {{ category?.name || 'None' }}</span>
-          <span>Candidates: {{ candidates.length }}</span>
+          <span>Candidates: {{ displayedCandidates.length }}</span>
           <span>Criteria: {{ criteria.length }}</span>
           <span>Error: {{ candidatesError || 'None' }}</span>
           <span>Route: {{ route.params.key }}</span>
@@ -125,7 +125,7 @@
       <div v-else>
         <!-- Candidates Section -->
         <div
-          v-if="candidates.length === 0"
+          v-if="displayedCandidates.length === 0"
           class="bg-slate-900/50 rounded-2xl border border-slate-800/50 p-8 text-center mb-8"
         >
           <div class="w-16 h-16 bg-slate-950 rounded-2xl flex items-center justify-center text-slate-800 mx-auto mb-4 border border-slate-900">
@@ -157,7 +157,7 @@
             class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4"
           >
             <div
-              v-for="candidate in candidates"
+              v-for="candidate in displayedCandidates"
               :key="candidate.id"
               class="bg-slate-900 rounded-[2rem] border border-slate-800 overflow-hidden shadow-xl hover:shadow-amber-500/10 transition-all duration-500 group flex flex-col relative"
             >
@@ -305,7 +305,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useCategoryStore } from '@/stores/categories';
@@ -328,7 +328,7 @@ const authStore = useAuthStore();
 const categoryStore = useCategoryStore();
 const scoreStore = useScoreStore();
 
-const candidates = ref<Candidate[]>([]);
+const allCandidates = ref<Candidate[]>([]);
 const criteria = ref<Criterion[]>([]);
 const loading = ref(true);
 const candidatesError = ref<string | null>(null);
@@ -340,6 +340,15 @@ const successMessage = ref('');
 const candidateCriteria = ref<Record<string, CriterionWithScore[]>>({});
 const savingStates = ref<Record<string, boolean>>({});
 const savedStates = ref<Record<string, boolean>>({});
+let scoresSubscription: { unsubscribe?: () => void } | null = null;
+
+const TOP7_WEIGHTS: Record<string, number> = {
+  'FILIPINIANA ATTIRE': 0.15,
+  'PRODUCTION NUMBER': 0.15,
+  'BEST IN SWIMSUIT': 0.2,
+  'LONG GOWN': 0.2,
+  'QUESTION AND ANSWER': 0.3
+};
 
 const category = computed(() => {
   const key = route.params.key as string;
@@ -357,6 +366,48 @@ const category = computed(() => {
 
   console.log('Selected Category Result:', result);
   return result;
+});
+
+const isTop7Category = computed(() => {
+  const name = (category.value?.name || '').toUpperCase().trim();
+  return name === 'TOP 7' || name === 'TOP7';
+});
+
+const top7SourceCategories = computed(() => {
+  return categoryStore.categories.filter(cat => TOP7_WEIGHTS[(cat.name || '').toUpperCase().trim()] !== undefined);
+});
+
+const displayedCandidates = computed(() => {
+  if (!isTop7Category.value) {
+    return allCandidates.value;
+  }
+
+  const ranked = allCandidates.value.map(candidate => {
+    let weightedTotal = 0;
+
+    top7SourceCategories.value.forEach((sourceCategory) => {
+      const judgeTotalsMap = scoreStore.getCandidateCategoryJudgeTotals(candidate.id, sourceCategory.id);
+      const judgeTotals = Object.values(judgeTotalsMap);
+      const categoryAverage = judgeTotals.length
+        ? judgeTotals.reduce((sum, value) => sum + value, 0) / judgeTotals.length
+        : 0;
+      const weight = TOP7_WEIGHTS[(sourceCategory.name || '').toUpperCase().trim()] || 0;
+
+      weightedTotal += categoryAverage * weight;
+    });
+
+    return {
+      ...candidate,
+      weightedTotal
+    };
+  });
+
+  return ranked
+    .filter(candidate => candidate.weightedTotal > 0)
+    .sort((a, b) => b.weightedTotal - a.weightedTotal)
+    .slice(0, 7)
+    .sort((a, b) => a.number - b.number)
+    .map(({ weightedTotal, ...candidate }) => candidate);
 });
 
 const fetchCriteria = async () => {
@@ -377,10 +428,10 @@ const loadCandidateScores = async () => {
   if (!category.value || !authStore.profile) return;
 
   try {
-    const candidateIds = candidates.value.map(c => c.id);
+    const candidateIds = displayedCandidates.value.map(c => c.id);
     const scores = await loadScores(authStore.profile.id, candidateIds, category.value.id);
 
-    candidates.value.forEach(candidate => {
+    displayedCandidates.value.forEach(candidate => {
       const candidateScores = criteria.value.map((criterion) => {
         const existingScore = scores.find(s =>
           String(s.candidate_id) === String(candidate.id) &&
@@ -399,6 +450,13 @@ const loadCandidateScores = async () => {
 
       candidateCriteria.value[candidate.id] = candidateScores;
     });
+
+    const activeCandidateIds = new Set(candidateIds);
+    Object.keys(candidateCriteria.value).forEach((candidateId) => {
+      if (!activeCandidateIds.has(candidateId)) {
+        delete candidateCriteria.value[candidateId];
+      }
+    });
   } catch (error: any) {
     console.error('Error loading candidate scores:', error);
   }
@@ -406,25 +464,9 @@ const loadCandidateScores = async () => {
 
 const fetchCandidates = async () => {
   candidatesError.value = null;
-
-  const candidateFields = 'id, name, number, photo_url';
-  const legacyFields = 'id, candidate_name, candidate_number, photo_url';
-
-  let data: any;
-  let error: any;
-
-  ({ data, error } = await supabase
+  const { data, error } = await supabase
     .from('candidates')
-    .select(candidateFields)
-    .order('number', { ascending: true }));
-
-  if (error) {
-    console.warn('Primary candidate query failed, trying fallback fields:', error.message || error);
-    ({ data, error } = await supabase
-      .from('candidates')
-      .select(legacyFields)
-      .order('candidate_number', { ascending: true }));
-  }
+    .select('*');
 
   console.log('Candidates query result:', data);
   console.log('Candidates query error:', error);
@@ -436,13 +478,19 @@ const fetchCandidates = async () => {
     return;
   }
 
-  candidates.value = (data || []).map((row: any) => ({
-    id: String(row.id),
-    name: row.name ?? row.candidate_name ?? 'Candidate',
-    number: Number(row.number ?? row.candidate_number ?? 0),
-    photo_url: row.photo_url,
-    image_url: row.photo_url
-  }));
+  allCandidates.value = (data || [])
+    .map((row: any) => ({
+      ...row,
+      id: String(row.id),
+      name: row.name ?? row.candidate_name ?? 'Candidate',
+      number: Number(row.number ?? row.candidate_number ?? 0),
+      country_name: row.country_name ?? row.country ?? '',
+      photo_url: row.photo_url ?? row.image_url ?? '',
+      image_url: row.image_url ?? row.photo_url ?? '',
+      is_top14: Boolean(row.is_top14),
+      is_top5: Boolean(row.is_top5)
+    }))
+    .sort((a: Candidate, b: Candidate) => a.number - b.number);
 };
 
 const retryFetch = async () => {
@@ -450,7 +498,7 @@ const retryFetch = async () => {
   await Promise.all([
     categoryStore.fetchCategories(),
     fetchCandidates(),
-    authStore.profile ? scoreStore.fetchScores(authStore.profile.id) : Promise.resolve()
+    scoreStore.fetchScores()
   ]);
 
   if (category.value) {
@@ -599,12 +647,12 @@ onMounted(async () => {
   await Promise.all([
     categoryStore.fetchCategories(),
     fetchCandidates(),
-    authStore.profile ? scoreStore.fetchScores(authStore.profile.id) : Promise.resolve()
+    scoreStore.fetchScores()
   ]);
 
   console.log('📊 CategoryScoring - Initial data loaded:', {
     categories: categoryStore.categories.length,
-    candidates: candidates.value.length,
+    candidates: displayedCandidates.value.length,
     profile: authStore.profile?.id
   });
 
@@ -622,6 +670,8 @@ onMounted(async () => {
 
   loading.value = false;
   console.log('🏁 CategoryScoring onMounted - Complete');
+
+  scoresSubscription = scoreStore.subscribeToScores();
 });
 
 watch(() => route.params.key, async () => {
@@ -641,6 +691,20 @@ watch(() => route.params.key, async () => {
   }
 
   loading.value = false;
+});
+
+watch(
+  () => displayedCandidates.value.map(candidate => candidate.id).join('|'),
+  async (newIds, oldIds) => {
+    if (newIds === oldIds) return;
+    if (!category.value || !authStore.profile || criteriaLoading.value || criteria.value.length === 0) return;
+    await loadCandidateScores();
+  }
+);
+
+onUnmounted(() => {
+  scoresSubscription?.unsubscribe?.();
+  scoresSubscription = null;
 });
 </script>
 

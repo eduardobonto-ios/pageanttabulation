@@ -181,17 +181,9 @@ const sortBy = ref<'total' | 'average'>('total');
 
 const overallRankings = computed(() => {
   const results = candidateStore.candidates.map(cand => {
-    const candScores = scoreStore.scores.filter(s => s.candidate_id === cand.id);
-    
-    // Group scores by category (now each score is already a total)
-    const categoryScores: Record<string, number> = {};
-    
-    candScores.forEach(s => {
-      categoryScores[s.category_id] = s.total_score;
-    });
-
-    const totalScore = Object.values(categoryScores).reduce((acc, val) => acc + val, 0);
-    const scoredCategories = Object.keys(categoryScores).length;
+    const categoryTotals = scoreStore.getCandidateAllCategoryTotals(cand.id);
+    const totalScore = Object.values(categoryTotals).reduce((acc, val) => acc + val, 0);
+    const scoredCategories = Object.keys(categoryTotals).length;
     const averageScore = scoredCategories > 0 ? totalScore / scoredCategories : 0;
 
     return {

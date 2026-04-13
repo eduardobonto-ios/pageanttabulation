@@ -98,6 +98,60 @@ export const useScoreStore = defineStore('scores', {
     loading: false
   }),
 
+  getters: {
+    getJudgeCandidateCategoryTotal: (state) => {
+      return (judgeId: string, candidateId: string, categoryId: string) => {
+        return state.scores
+          .filter(s =>
+            String(s.judge_id) === String(judgeId) &&
+            String(s.candidate_id) === String(candidateId) &&
+            String(s.category_id) === String(categoryId)
+          )
+          .reduce((total, s) => total + Number(s.score_value || 0), 0);
+      };
+    },
+
+    getCandidateCategoryJudgeTotals: (state) => {
+      return (candidateId: string, categoryId: string) => {
+        const totalsByJudge: Record<string, number> = {};
+
+        state.scores.forEach((s) => {
+          if (
+            String(s.candidate_id) === String(candidateId) &&
+            String(s.category_id) === String(categoryId)
+          ) {
+            const judgeId = String(s.judge_id);
+            totalsByJudge[judgeId] = (totalsByJudge[judgeId] || 0) + Number(s.score_value || 0);
+          }
+        });
+
+        return totalsByJudge;
+      };
+    },
+
+    getCandidateCategoryOverallTotal(): (candidateId: string, categoryId: string) => number {
+      return (candidateId: string, categoryId: string) => {
+        const totalsByJudge = this.getCandidateCategoryJudgeTotals(candidateId, categoryId);
+        return Object.values(totalsByJudge).reduce((total, value) => total + value, 0);
+      };
+    },
+
+    getCandidateAllCategoryTotals(): (candidateId: string) => Record<string, number> {
+      return (candidateId: string) => {
+        const totalsByCategory: Record<string, number> = {};
+
+        state.scores.forEach((s) => {
+          if (String(s.candidate_id) === String(candidateId)) {
+            const categoryId = String(s.category_id);
+            totalsByCategory[categoryId] = (totalsByCategory[categoryId] || 0) + Number(s.score_value || 0);
+          }
+        });
+
+        return totalsByCategory;
+      };
+    }
+  },
+
   actions: {
     async fetchScores(judgeId?: string, categoryId?: string) {
       this.loading = true;
