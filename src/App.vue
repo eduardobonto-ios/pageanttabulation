@@ -14,12 +14,22 @@
       </div>
     </div>
 
+    <div
+      v-if="!isSupabaseConfigured"
+      class="bg-amber-950/30 border-b border-amber-900/40 px-4 py-3 text-amber-200 text-sm"
+    >
+      <div class="max-w-[1600px] mx-auto">
+        App configuration is incomplete. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to your Vercel environment variables.
+      </div>
+    </div>
+
     <!-- Router View -->
     <router-view />
   </div>
 </template>
 
 <script setup lang="ts">
+import { isSupabaseConfigured } from '@/lib/supabase';
 import { useRoute } from 'vue-router';
 
 const route = useRoute();

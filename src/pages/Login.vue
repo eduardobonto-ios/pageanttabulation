@@ -50,9 +50,14 @@
         {{ error }}
       </div>
 
+      <div v-if="!isSupabaseConfigured" class="bg-amber-950/20 text-amber-300 text-sm p-4 rounded-2xl border border-amber-900/50 flex items-center gap-3">
+        <AlertCircle :size="18" />
+        Supabase is not configured. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Vercel project settings.
+      </div>
+
       <button 
         type="submit"
-        :disabled="loading"
+        :disabled="loading || !isSupabaseConfigured"
         class="w-full bg-teal-500 hover:bg-teal-600 active:scale-[0.98] text-white font-bold py-4 rounded-2xl shadow-lg shadow-teal-900/20 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
       >
         <span v-if="!loading">Sign In</span>
@@ -71,7 +76,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { supabase } from '@/lib/supabase';
+import { isSupabaseConfigured, supabase, supabaseConfigError } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth';
 import { 
   Trophy, 
@@ -96,6 +101,10 @@ const handleLogin = async () => {
   try {
     loading.value = true
     error.value = ''
+    if (!isSupabaseConfigured) {
+      error.value = supabaseConfigError || 'Supabase is not configured'
+      return
+    }
 
     const { data, error: authError } = await supabase.auth.signInWithPassword({
       email: email.value,

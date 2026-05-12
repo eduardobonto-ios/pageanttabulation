@@ -136,7 +136,7 @@ export const useScoreStore = defineStore('scores', {
       };
     },
 
-    getCandidateAllCategoryTotals(): (candidateId: string) => Record<string, number> {
+    getCandidateAllCategoryTotals: (state) => {
       return (candidateId: string) => {
         const totalsByCategory: Record<string, number> = {};
 

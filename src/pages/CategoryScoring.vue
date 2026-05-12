@@ -39,24 +39,12 @@
           </div>
         </div>
 
-        <div class="flex items-center gap-3">
-          <div
-            v-if="category?.is_locked"
-            class="bg-amber-950/20 border border-amber-900/50 text-amber-500 px-4 py-2 rounded-xl flex items-center gap-2 font-bold text-xs shadow-lg"
-          >
-            <Lock :size="16" />
-            Locked
-          </div>
-
-          <button
-            @click="submitAll"
-            :disabled="submitting || isSubmitted"
-            class="bg-amber-500 hover:bg-amber-600 text-white px-6 py-2.5 rounded-xl font-black shadow-lg shadow-amber-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm"
-          >
-            <CheckCircle v-if="!submitting" :size="18" />
-            <Loader2 v-else class="animate-spin" :size="18" />
-            {{ isSubmitted ? 'Finalized' : 'Submit All' }}
-          </button>
+        <div
+          v-if="category?.is_locked"
+          class="bg-amber-950/20 border border-amber-900/50 text-amber-500 px-4 py-2 rounded-xl flex items-center gap-2 font-bold text-xs shadow-lg"
+        >
+          <Lock :size="16" />
+          Locked
         </div>
       </div>
     </div>
@@ -218,7 +206,7 @@
                         <select
                           v-model.number="criterion.selected_score"
                           @change="saveScore(candidate.id, criterion.criterion_id, criterion.selected_score)"
-                          :disabled="category?.is_locked || isSubmitted"
+                          :disabled="category?.is_locked"
                           class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white font-black focus:ring-2 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all disabled:opacity-30 text-sm shadow-inner group-hover/input:border-slate-700 appearance-none cursor-pointer"
                         >
                           <option
@@ -288,19 +276,6 @@
       </div>
       <!-- /Main Content Area -->
     </div>
-
-    <!-- Success Toast -->
-    <transition name="slide-up">
-      <div
-        v-if="successMessage"
-        class="fixed bottom-8 right-8 bg-slate-800 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 z-50"
-      >
-        <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-          <Check :size="18" />
-        </div>
-        <p class="font-bold">{{ successMessage }}</p>
-      </div>
-    </transition>
   </div>
 </template>
 
@@ -315,7 +290,6 @@ import type { Candidate, Criterion, CriterionWithScore } from '@/types';
 import {
   ChevronLeft,
   Lock,
-  CheckCircle,
   Loader2,
   Users,
   Check,
@@ -333,9 +307,6 @@ const criteria = ref<Criterion[]>([]);
 const loading = ref(true);
 const candidatesError = ref<string | null>(null);
 const criteriaLoading = ref(false);
-const submitting = ref(false);
-const isSubmitted = ref(false);
-const successMessage = ref('');
 
 const candidateCriteria = ref<Record<string, CriterionWithScore[]>>({});
 const savingStates = ref<Record<string, boolean>>({});
@@ -343,11 +314,21 @@ const savedStates = ref<Record<string, boolean>>({});
 let scoresSubscription: { unsubscribe?: () => void } | null = null;
 
 const TOP7_WEIGHTS: Record<string, number> = {
-  'FILIPINIANA ATTIRE': 0.15,
   'PRODUCTION NUMBER': 0.15,
-  'BEST IN SWIMSUIT': 0.2,
-  'LONG GOWN': 0.2,
-  'QUESTION AND ANSWER': 0.3
+  'FILIPINIANA ATTIRE': 0.15,
+  'ADVOCACY': 0.15,
+  'SWIMSUIT COMPETITION': 0.15,
+  'EVENING GOWN': 0.2,
+  'QUESTION AND ANSWER': 0.2
+};
+
+const normalizeTop7CategoryName = (name?: string) => {
+  const normalized = (name || '').toUpperCase().trim();
+
+  if (normalized === 'BEST IN SWIMSUIT') return 'SWIMSUIT COMPETITION';
+  if (normalized === 'LONG GOWN') return 'EVENING GOWN';
+
+  return normalized;
 };
 
 const category = computed(() => {
@@ -369,12 +350,12 @@ const category = computed(() => {
 });
 
 const isTop7Category = computed(() => {
-  const name = (category.value?.name || '').toUpperCase().trim();
+  const name = normalizeTop7CategoryName(category.value?.name);
   return name === 'TOP 7' || name === 'TOP7';
 });
 
 const top7SourceCategories = computed(() => {
-  return categoryStore.categories.filter(cat => TOP7_WEIGHTS[(cat.name || '').toUpperCase().trim()] !== undefined);
+  return categoryStore.categories.filter(cat => TOP7_WEIGHTS[normalizeTop7CategoryName(cat.name)] !== undefined);
 });
 
 const displayedCandidates = computed(() => {
@@ -391,7 +372,7 @@ const displayedCandidates = computed(() => {
       const categoryAverage = judgeTotals.length
         ? judgeTotals.reduce((sum, value) => sum + value, 0) / judgeTotals.length
         : 0;
-      const weight = TOP7_WEIGHTS[(sourceCategory.name || '').toUpperCase().trim()] || 0;
+      const weight = TOP7_WEIGHTS[normalizeTop7CategoryName(sourceCategory.name)] || 0;
 
       weightedTotal += categoryAverage * weight;
     });
@@ -503,7 +484,6 @@ const retryFetch = async () => {
 
   if (category.value) {
     await Promise.all([
-      checkSubmissionStatus(),
       fetchCriteria()
     ]);
     await loadCandidateScores();
@@ -521,11 +501,10 @@ const saveScore = async (candidateId: string, criterionId: string | number, scor
     judgeId: authStore.profile?.id
   });
 
-  if (!category.value || category.value?.is_locked || isSubmitted.value || !authStore.profile) {
+  if (!category.value || category.value?.is_locked || !authStore.profile) {
     console.warn('SAVE BLOCKED:', {
       hasCategory: !!category.value,
       isLocked: category.value?.is_locked,
-      isSubmitted: isSubmitted.value,
       hasProfile: !!authStore.profile
     });
     return;
@@ -577,69 +556,6 @@ const calculateTotal = (candidateId: string) => {
   return candidateScores.reduce((total, criterion) => total + criterion.selected_score, 0);
 };
 
-const submitAll = async () => {
-  if (!category.value || isSubmitted.value) return;
-
-  submitting.value = true;
-  try {
-    const { error: submissionError } = await supabase
-      .from('category_submissions')
-      .upsert({
-        judge_id: authStore.profile!.id,
-        category_id: category.value!.id,
-        is_submitted: true,
-        submitted_at: new Date().toISOString()
-      });
-
-    if (submissionError) throw submissionError;
-
-    isSubmitted.value = true;
-    showSuccess('Scores submitted successfully!');
-  } catch (error: any) {
-    const message = error?.message || String(error);
-    if (message.toLowerCase().includes('not found') || message.toLowerCase().includes('404')) {
-      console.warn('Submission table missing or unavailable, continuing without submission record:', message);
-      isSubmitted.value = false;
-      showSuccess('Scores saved, but final submission record could not be created.');
-    } else {
-      console.error('Failed to submit scores:', error);
-    }
-  } finally {
-    submitting.value = false;
-  }
-};
-
-const showSuccess = (msg: string) => {
-  successMessage.value = msg;
-  setTimeout(() => {
-    successMessage.value = '';
-  }, 3000);
-};
-
-const checkSubmissionStatus = async () => {
-  if (!category.value || !authStore.profile) return;
-
-  try {
-    const { data, error } = await supabase
-      .from('category_submissions')
-      .select('*')
-      .eq('judge_id', authStore.profile.id)
-      .eq('category_id', category.value.id)
-      .single();
-
-    if (error) {
-      console.warn('Category submission check skipped:', error.message || error);
-      return;
-    }
-
-    if (data) {
-      isSubmitted.value = data.is_submitted;
-    }
-  } catch (error: any) {
-    console.warn('Category submission check failed:', error.message || error);
-  }
-};
-
 onMounted(async () => {
   console.log('🎯 CategoryScoring onMounted - Starting data load');
   loading.value = true;
@@ -659,7 +575,6 @@ onMounted(async () => {
   if (category.value) {
     console.log('🎯 CategoryScoring - Loading category-specific data for:', category.value.id);
     await Promise.all([
-      checkSubmissionStatus(),
       fetchCriteria()
     ]);
     await loadCandidateScores();
@@ -681,7 +596,6 @@ watch(() => route.params.key, async () => {
   if (category.value) {
     console.log('🎯 CategoryScoring - Reloading data for category:', category.value.id);
     await Promise.all([
-      checkSubmissionStatus(),
       fetchCriteria()
     ]);
     await loadCandidateScores();
@@ -709,21 +623,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.slide-up-enter-active,
-.slide-up-leave-active {
-  transition: all 0.3s ease;
-}
-
-.slide-up-enter-from {
-  transform: translateY(100%);
-  opacity: 0;
-}
-
-.slide-up-leave-to {
-  transform: translateY(20px);
-  opacity: 0;
-}
-
 input::-webkit-outer-spin-button,
 input::-webkit-inner-spin-button {
   -webkit-appearance: none;

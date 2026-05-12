@@ -12,7 +12,7 @@
 
       <div class="flex gap-3 flex-wrap">
         <button
-          v-if="!isTop7Category && winnerCard"
+          v-if="winnerCard"
           @click="printWinner"
           class="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-orange-100 hover:opacity-95 transition-all"
         >
@@ -409,6 +409,8 @@ const exportToCSV = () => {
 const printWinner = () => {
   if (!winnerCard.value || !category.value) return;
 
+  const printedCategoryTitle = isTop7Category.value ? 'MUTYA NG QUEZON 2026' : category.value.name;
+
   const printWindow = window.open('', '_blank', 'width=1200,height=900');
   if (!printWindow) return;
 
@@ -419,7 +421,7 @@ const printWinner = () => {
   printWindow.document.write(`
     <html>
       <head>
-        <title>${category.value.name} Winner</title>
+        <title>${printedCategoryTitle} Winner</title>
         <style>
           * { box-sizing: border-box; }
           body {
@@ -548,6 +550,7 @@ const printWinner = () => {
             body { background: white; }
             .page { padding: 0; }
             .card { box-shadow: none; border-color: #fcd34d; }
+            .candidate-image { object-position: center top; }
           }
         </style>
       </head>
@@ -558,7 +561,7 @@ const printWinner = () => {
               <div class="photo-shell">${imageHtml}</div>
               <div>
                 <div class="eyebrow">Official Winner</div>
-                <div class="category">${category.value.name}</div>
+                <div class="category">${printedCategoryTitle}</div>
                 <h1 class="name">${winnerCard.value.candidate.name}</h1>
                 <div class="number">Candidate #${winnerCard.value.candidate.number}</div>
                 <div class="stats">

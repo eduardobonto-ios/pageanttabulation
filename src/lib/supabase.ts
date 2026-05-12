@@ -1,17 +1,22 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const rawSupabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim()
+const rawSupabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim()
 
-console.log('VITE_SUPABASE_URL:', supabaseUrl)
-console.log('VITE_SUPABASE_ANON_KEY exists:', !!supabaseAnonKey)
+export const isSupabaseConfigured = Boolean(rawSupabaseUrl && rawSupabaseAnonKey)
+export const supabaseConfigError = !rawSupabaseUrl
+  ? 'Missing VITE_SUPABASE_URL'
+  : !rawSupabaseAnonKey
+    ? 'Missing VITE_SUPABASE_ANON_KEY'
+    : null
 
-if (!supabaseUrl) {
-  throw new Error('Missing VITE_SUPABASE_URL')
-}
+const supabaseUrl = rawSupabaseUrl || 'https://placeholder.supabase.co'
+const supabaseAnonKey = rawSupabaseAnonKey || 'placeholder-anon-key'
 
-if (!supabaseAnonKey) {
-  throw new Error('Missing VITE_SUPABASE_ANON_KEY')
+console.log('VITE_SUPABASE_URL exists:', !!rawSupabaseUrl)
+console.log('VITE_SUPABASE_ANON_KEY exists:', !!rawSupabaseAnonKey)
+if (supabaseConfigError) {
+  console.error('Supabase configuration error:', supabaseConfigError)
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
