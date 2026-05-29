@@ -313,7 +313,7 @@ const savingStates = ref<Record<string, boolean>>({});
 const savedStates = ref<Record<string, boolean>>({});
 let scoresSubscription: { unsubscribe?: () => void } | null = null;
 
-const TOP7_WEIGHTS: Record<string, number> = {
+const TOP7_QUALIFIER_WEIGHTS: Record<string, number> = {
   'PRODUCTION NUMBER': 0.15,
   'FILIPINIANA ATTIRE': 0.15,
   'ADVOCACY': 0.15,
@@ -355,7 +355,7 @@ const isTop7Category = computed(() => {
 });
 
 const top7SourceCategories = computed(() => {
-  return categoryStore.categories.filter(cat => TOP7_WEIGHTS[normalizeTop7CategoryName(cat.name)] !== undefined);
+  return categoryStore.categories.filter(cat => TOP7_QUALIFIER_WEIGHTS[normalizeTop7CategoryName(cat.name)] !== undefined);
 });
 
 const displayedCandidates = computed(() => {
@@ -372,7 +372,7 @@ const displayedCandidates = computed(() => {
       const categoryAverage = judgeTotals.length
         ? judgeTotals.reduce((sum, value) => sum + value, 0) / judgeTotals.length
         : 0;
-      const weight = TOP7_WEIGHTS[normalizeTop7CategoryName(sourceCategory.name)] || 0;
+      const weight = TOP7_QUALIFIER_WEIGHTS[normalizeTop7CategoryName(sourceCategory.name)] || 0;
 
       weightedTotal += categoryAverage * weight;
     });

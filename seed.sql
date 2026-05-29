@@ -95,6 +95,18 @@ UNION ALL
 SELECT id, 'Delivery & Poise', 40, 2 FROM public.categories WHERE category_key = 'qa-top5'
 ON CONFLICT DO NOTHING;
 
+-- Top 7 Final Round
+INSERT INTO public.categories (category_key, category_name, stage_type) 
+VALUES ('top7', 'Top 7', 'main') ON CONFLICT (category_key) DO NOTHING;
+
+INSERT INTO public.category_criteria (category_id, criterion_name, weight_value, display_order)
+SELECT id, 'Swimsuit Competition', 30, 1 FROM public.categories WHERE category_key = 'top7'
+UNION ALL
+SELECT id, 'Evening Gown', 30, 2 FROM public.categories WHERE category_key = 'top7'
+UNION ALL
+SELECT id, 'Question and Answer', 40, 3 FROM public.categories WHERE category_key = 'top7'
+ON CONFLICT DO NOTHING;
+
 -- 2. Sample Candidates
 INSERT INTO public.candidates (candidate_number, candidate_name, country_name, is_top14, is_top5)
 VALUES 

@@ -27,7 +27,6 @@
           Export CSV
         </button>
         <button
-          v-if="!isTop7Category"
           @click="toggleLock"
           class="px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all"
           :class="[category?.is_locked ? 'bg-amber-500 text-white shadow-lg shadow-amber-100' : 'bg-slate-100 text-slate-600 hover:bg-slate-200']"
@@ -44,7 +43,7 @@
       <p class="text-slate-500 font-medium text-center">Calculating results and rankings...</p>
     </div>
 
-    <div v-else-if="winnerCard && !isTop7Category" class="relative overflow-hidden rounded-[2rem] border border-amber-100 bg-gradient-to-br from-[#fff9ed] via-white to-[#fef3c7] shadow-xl shadow-amber-100/60 p-8">
+    <div v-else-if="winnerCard" class="relative overflow-hidden rounded-[2rem] border border-amber-100 bg-gradient-to-br from-[#fff9ed] via-white to-[#fef3c7] shadow-xl shadow-amber-100/60 p-8">
       <div class="absolute top-0 right-0 w-48 h-48 bg-amber-200/20 rounded-full blur-3xl"></div>
       <div class="absolute bottom-0 left-0 w-56 h-56 bg-orange-200/20 rounded-full blur-3xl"></div>
 
@@ -100,15 +99,9 @@
             <tr class="bg-slate-50 border-b border-slate-100">
               <th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Rank</th>
               <th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Candidate</th>
-              <th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">
-                {{ isTop7Category ? 'Weighted Score' : 'Total Score' }}
-              </th>
-              <th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">
-                {{ isTop7Category ? 'Composite %' : 'Average Score' }}
-              </th>
-              <th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">
-                {{ isTop7Category ? 'Formula Breakdown' : 'Status' }}
-              </th>
+              <th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">Total Score</th>
+              <th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-center">Average Score</th>
+              <th class="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">Status</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-50">
@@ -154,26 +147,15 @@
                 <span class="text-lg font-black text-teal-600">{{ result.averageScore.toFixed(2) }}</span>
               </td>
               <td class="px-6 py-5 text-right">
-                <template v-if="isTop7Category">
-                  <div class="text-xs text-slate-500 leading-5 max-w-[320px] ml-auto">
-                    <span
-                      v-for="part in result.breakdown || []"
-                      :key="part"
-                      class="inline-block mr-2"
-                    >{{ part }}</span>
-                  </div>
-                </template>
-                <template v-else>
-                  <div class="flex justify-end gap-1">
-                    <div
-                      v-for="judge in judges"
-                      :key="judge.id"
-                      class="w-2 h-2 rounded-full"
-                      :class="[hasJudgeScored(judge.id, result.candidate.id) ? 'bg-teal-500' : 'bg-slate-200']"
-                      :title="judge.full_name"
-                    ></div>
-                  </div>
-                </template>
+                <div class="flex justify-end gap-1">
+                  <div
+                    v-for="judge in judges"
+                    :key="judge.id"
+                    class="w-2 h-2 rounded-full"
+                    :class="[hasJudgeScored(judge.id, result.candidate.id) ? 'bg-teal-500' : 'bg-slate-200']"
+                    :title="judge.full_name"
+                  ></div>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -189,7 +171,7 @@
       </div>
     </div>
 
-    <div v-if="!loading && !isTop7Category" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div v-if="!loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       <div
         v-for="judge in judges"
         :key="judge.id"
@@ -247,13 +229,18 @@ const loading = ref(true);
 const judges = ref<any[]>([]);
 const submissions = ref<any[]>([]);
 
-const TOP7_WEIGHTS: Record<string, number> = {
-  'FILIPINIANA ATTIRE': 0.15,
+const TOP7_QUALIFIER_WEIGHTS: Record<string, number> = {
   'PRODUCTION NUMBER': 0.15,
-  'BEST IN SWIMSUIT': 0.2,
+  'FILIPINIANA ATTIRE': 0.15,
+  'ADVOCACY': 0.15,
+  'SWIMSUIT COMPETITION': 0.15,
+  'BEST IN SWIMSUIT': 0.15,
+  'EVENING GOWN': 0.2,
   'LONG GOWN': 0.2,
-  'QUESTION AND ANSWER': 0.3
+  'QUESTION AND ANSWER': 0.2
 };
+
+const normalizeCategoryName = (name?: string) => (name || '').toUpperCase().trim();
 
 const category = computed(() => {
   const key = route.params.key as string;
@@ -266,17 +253,45 @@ const category = computed(() => {
 });
 
 const isTop7Category = computed(() => {
-  const name = (category.value?.name || '').toUpperCase().trim();
+  const name = normalizeCategoryName(category.value?.name);
   return name === 'TOP 7' || name === 'TOP7';
 });
 
-const scoringCategories = computed(() => {
-  return categoryStore.categories.filter(cat => TOP7_WEIGHTS[(cat.name || '').toUpperCase().trim()] !== undefined);
+const top7SourceCategories = computed(() => {
+  return categoryStore.categories.filter(cat => TOP7_QUALIFIER_WEIGHTS[normalizeCategoryName(cat.name)] !== undefined);
+});
+
+const top7Candidates = computed(() => {
+  const ranked = candidateStore.candidates.map(candidate => {
+    let qualifierTotal = 0;
+
+    top7SourceCategories.value.forEach(sourceCategory => {
+      const judgeTotalsMap = scoreStore.getCandidateCategoryJudgeTotals(candidate.id, sourceCategory.id);
+      const judgeTotals = Object.values(judgeTotalsMap);
+      const categoryAverage = judgeTotals.length
+        ? judgeTotals.reduce((sum, value) => sum + value, 0) / judgeTotals.length
+        : 0;
+      const weight = TOP7_QUALIFIER_WEIGHTS[normalizeCategoryName(sourceCategory.name)] || 0;
+
+      qualifierTotal += categoryAverage * weight;
+    });
+
+    return {
+      ...candidate,
+      qualifierTotal
+    };
+  });
+
+  return ranked
+    .filter(candidate => candidate.qualifierTotal > 0)
+    .sort((a, b) => b.qualifierTotal - a.qualifierTotal)
+    .slice(0, 7)
+    .map(({ qualifierTotal, ...candidate }) => candidate);
 });
 
 const candidates = computed(() => {
-  if (isTop7Category.value) return candidateStore.candidates;
   if (!category.value) return [];
+  if (isTop7Category.value) return top7Candidates.value;
   if (category.value.stage_type === 'top14') return candidateStore.candidates.filter(c => c.is_top14);
   if (category.value.stage_type === 'top5') return candidateStore.candidates.filter(c => c.is_top5);
   return candidateStore.candidates;
@@ -284,39 +299,6 @@ const candidates = computed(() => {
 
 const rankedResults = computed(() => {
   if (!category.value) return [];
-
-  if (isTop7Category.value) {
-    const results = candidateStore.candidates.map(cand => {
-      let weightedTotal = 0;
-      let rawTotal = 0;
-      const breakdown: string[] = [];
-
-      scoringCategories.value.forEach(cat => {
-        const judgeTotalsMap = scoreStore.getCandidateCategoryJudgeTotals(cand.id, cat.id);
-        const judgeTotals = Object.values(judgeTotalsMap);
-        const categoryAverage = judgeTotals.length ? judgeTotals.reduce((acc, val) => acc + val, 0) / judgeTotals.length : 0;
-        const weight = TOP7_WEIGHTS[(cat.name || '').toUpperCase().trim()] || 0;
-        const weighted = categoryAverage * weight;
-
-        rawTotal += categoryAverage;
-        weightedTotal += weighted;
-        breakdown.push(`${cat.name}: ${categoryAverage.toFixed(2)} × ${(weight * 100).toFixed(0)}% = ${weighted.toFixed(2)}`);
-      });
-
-      return {
-        candidate: cand,
-        totalScore: weightedTotal,
-        averageScore: weightedTotal,
-        rawTotal,
-        breakdown
-      };
-    });
-
-    return results
-      .filter(result => result.totalScore > 0)
-      .sort((a, b) => b.totalScore - a.totalScore)
-      .slice(0, 7);
-  }
 
   const results = candidates.value.map(cand => {
     const judgeTotalsMap = scoreStore.getCandidateCategoryJudgeTotals(cand.id, category.value!.id);
@@ -334,7 +316,6 @@ const rankedResults = computed(() => {
 
   return results.sort((a, b) => b.averageScore - a.averageScore);
 });
-
 const winnerCard = computed(() => {
   const winner = rankedResults.value[0];
   if (!winner) return null;
@@ -351,7 +332,7 @@ const pageTitle = computed(() => {
 
 const pageSubtitle = computed(() => {
   if (isTop7Category.value) {
-    return 'Weighted overall ranking based on Filipiniana Attire 15%, Production Number 15%, Best in Swimsuit 20%, Long Gown 20%, and Question and Answer 30%.';
+    return 'Top 7 scores are based only on Swimsuit Competition 30, Evening Gown 30, and Question and Answer 40.';
   }
   return `Stage: ${category.value?.stage_type || 'main'}`;
 });
@@ -368,7 +349,7 @@ const isJudgeSubmitted = (judgeId: string) => {
 };
 
 const toggleLock = async () => {
-  if (!category.value || isTop7Category.value) return;
+  if (!category.value) return;
   await categoryStore.updateCategoryStatus(category.value.id, { is_locked: !category.value.is_locked });
 };
 
@@ -382,7 +363,7 @@ const exportToCSV = () => {
     breakdown: (result.breakdown || []).join(' | ')
   }));
 
-  const header = ['Rank', 'Candidate Number', 'Candidate Name', 'Total Score', 'Average/Weighted Score', 'Breakdown'];
+  const header = ['Rank', 'Candidate Number', 'Candidate Name', 'Total Score', 'Average Score', 'Breakdown'];
   const csv = [
     header.join(','),
     ...rows.map(row => [
@@ -640,3 +621,4 @@ watch(() => route.params.key, async () => {
   await loadAdminData();
 });
 </script>
+

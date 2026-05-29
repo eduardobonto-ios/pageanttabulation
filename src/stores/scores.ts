@@ -2,6 +2,8 @@ import { defineStore } from 'pinia';
 import { supabase } from '@/lib/supabase';
 import type { Score, Criterion } from '@/types';
 
+const SUPABASE_PAGE_SIZE = 1000;
+
 // UUID validator
 function isUuid(value: unknown) {
   return typeof value === 'string' &&
@@ -50,9 +52,8 @@ export async function loadCriteria(categoryId: string | number) {
 
   const { data, error } = await supabase
     .from('category_criteria')
-    .select('id, category_id, name, max_score, sort_order')
-    .eq('category_id', Number(categoryId))
-    .order('sort_order', { ascending: true });
+    .select('*')
+    .eq('category_id', String(categoryId));
 
   console.log('Supabase criteria query result:', data);
   console.log('Supabase criteria query error:', error);
@@ -68,28 +69,40 @@ export async function loadCriteria(categoryId: string | number) {
     name: row.name ?? row.criterion_name,
     max_score: Number(row.max_score ?? row.weight_value ?? 0),
     sort_order: Number(row.sort_order ?? row.display_order ?? 0)
-  }));
+  })).sort((a, b) => a.sort_order - b.sort_order);
 }
 
 export async function loadScores(judgeId: string, candidateIds: string[], categoryId: string) {
   console.log('LOAD SCORES PARAMS:', { judgeId, candidateIds, categoryId });
 
-  const { data, error } = await supabase
-    .from('scores')
-    .select('candidate_id, criterion_id, score_value')
-    .eq('judge_id', judgeId)
-    .in('candidate_id', candidateIds)
-    .eq('category_id', categoryId);
+  const allScores: { candidate_id: string; criterion_id: string; score_value: number }[] = [];
+  let from = 0;
 
-  console.log('LOAD SCORES RESULT DATA:', data);
-  console.log('LOAD SCORES RESULT ERROR:', error);
+  while (true) {
+    const { data, error } = await supabase
+      .from('scores')
+      .select('candidate_id, criterion_id, score_value')
+      .eq('judge_id', judgeId)
+      .in('candidate_id', candidateIds)
+      .eq('category_id', categoryId)
+      .order('id', { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
 
-  if (error) {
-    console.error('Error loading scores:', error);
-    throw error;
+    console.log('LOAD SCORES RESULT DATA:', data);
+    console.log('LOAD SCORES RESULT ERROR:', error);
+
+    if (error) {
+      console.error('Error loading scores:', error);
+      throw error;
+    }
+
+    allScores.push(...((data || []) as { candidate_id: string; criterion_id: string; score_value: number }[]));
+
+    if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+    from += SUPABASE_PAGE_SIZE;
   }
 
-  return data as { candidate_id: string; criterion_id: string; score_value: number }[];
+  return allScores;
 }
 
 export const useScoreStore = defineStore('scores', {
@@ -156,15 +169,29 @@ export const useScoreStore = defineStore('scores', {
     async fetchScores(judgeId?: string, categoryId?: string) {
       this.loading = true;
       try {
-        let query = supabase.from('scores').select('*');
+        const allScores: Score[] = [];
+        let from = 0;
 
-        if (judgeId) query = query.eq('judge_id', judgeId);
-        if (categoryId) query = query.eq('category_id', categoryId);
+        while (true) {
+          let query = supabase
+            .from('scores')
+            .select('*')
+            .order('id', { ascending: true })
+            .range(from, from + SUPABASE_PAGE_SIZE - 1);
 
-        const { data, error } = await query;
-        if (error) throw error;
+          if (judgeId) query = query.eq('judge_id', judgeId);
+          if (categoryId) query = query.eq('category_id', categoryId);
 
-        this.scores = data;
+          const { data, error } = await query;
+          if (error) throw error;
+
+          allScores.push(...((data || []) as Score[]));
+
+          if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+          from += SUPABASE_PAGE_SIZE;
+        }
+
+        this.scores = allScores;
       } catch (error) {
         console.error('Error fetching scores:', error);
       } finally {
